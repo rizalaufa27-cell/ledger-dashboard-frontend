@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { getLedger, getMonthlySummary } from "../services/api";
+import { getLedger, getMonthlySummary, getPnl, getCostCenters } from "../services/api";
 import KPICard from "../components/KPICard";
 import LedgerTable from "../components/LedgerTable";
 import MonthlySummaryChart from "../components/MonthlySummaryChart";
+import PnLStatement from "../components/PnLStatement";
 import { ACCOUNT_GROUPS } from "../data/chartOfAccounts";
 import { COA_LAMA_LIST } from "../data/coaLamaList";
 
@@ -19,6 +20,8 @@ function parseNumber(value) {
 }
 
 function Dashboard() {
+  const [activeTab, setActiveTab] = useState("ledger"); // "ledger" | "pnl"
+
   const [month, setMonth] = useState("Januari");
   const [accountFilter, setAccountFilter] = useState("");
   const [customAccount, setCustomAccount] = useState("");
@@ -32,6 +35,11 @@ function Dashboard() {
 
   const [monthlySummary, setMonthlySummary] = useState([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  const [pnlData, setPnlData] = useState(null);
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [costCenterFilter, setCostCenterFilter] = useState(""); // "" = semua (total)
+  const [costCenterList, setCostCenterList] = useState([]);
 
   const effectiveAccount = customAccount.trim() || accountFilter;
 
@@ -75,13 +83,48 @@ function Dashboard() {
     loadSummary();
   }, []);
 
-  // KPI dihitung dari data yang SEDANG ditampilkan (setelah filter akun & limit)
+  // Ambil daftar Cost Center tiap kali bulan berubah (tiap bulan = spreadsheet beda)
+  useEffect(() => {
+    async function loadCostCenters() {
+      try {
+        const result = await getCostCenters(month);
+        setCostCenterList(result);
+        // Kalau cost center yang lagi dipilih gak ada lagi di bulan ini, reset ke "semua"
+        if (costCenterFilter && !result.includes(costCenterFilter)) {
+          setCostCenterFilter("");
+        }
+      } catch (err) {
+        console.error(err);
+        setCostCenterList([]);
+      }
+    }
+
+    loadCostCenters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
+
+  useEffect(() => {
+    async function loadPnL() {
+      setPnlLoading(true);
+      try {
+        const result = await getPnl(month, costCenterFilter || undefined);
+        setPnlData(result);
+      } catch (err) {
+        console.error(err);
+        setPnlData(null);
+      } finally {
+        setPnlLoading(false);
+      }
+    }
+
+    loadPnL();
+  }, [month, costCenterFilter]);
+
   const totalDebit = data.reduce((sum, row) => sum + parseNumber(row["debit (idr)"]), 0);
   const totalCredit = data.reduce((sum, row) => sum + parseNumber(row["credit (idr)"]), 0);
   const totalBalance = data.reduce((sum, row) => sum + parseNumber(row["balance (idr)"]), 0);
   const totalVoucher = new Set(data.map((row) => row["voucher no"])).size;
 
-  // Ringkasan bulan aktif (kalau ada di summary global)
   const currentMonthSummary = monthlySummary.find((s) => s.month?.startsWith(month));
   const revenue = currentMonthSummary?.revenue ?? 0;
   const cogs = currentMonthSummary?.cogs ?? 0;
@@ -115,28 +158,28 @@ function Dashboard() {
         </div>
 
         <div className="control-group">
-  <label htmlFor="account-select">Filter Akun</label>
-  <select
-    id="account-select"
-    value={accountFilter}
-    onChange={(e) => {
-      setAccountFilter(e.target.value);
-      setCustomAccount("");
-    }}
-    style={{ minWidth: 260 }}
-  >
-    <option value="">Semua akun</option>
-    {ACCOUNT_GROUPS.map((group) => (
-      <optgroup key={group.category} label={group.category}>
-        {group.accounts.map((acc) => (
-          <option key={acc.code} value={acc.code}>
-            {acc.label}
-          </option>
-        ))}
-      </optgroup>
-    ))}
-  </select>
-</div>
+          <label htmlFor="account-select">Filter Akun</label>
+          <select
+            id="account-select"
+            value={accountFilter}
+            onChange={(e) => {
+              setAccountFilter(e.target.value);
+              setCustomAccount("");
+            }}
+            style={{ minWidth: 260 }}
+          >
+            <option value="">Semua akun</option>
+            {ACCOUNT_GROUPS.map((group) => (
+              <optgroup key={group.category} label={group.category}>
+                {group.accounts.map((acc) => (
+                  <option key={acc.code} value={acc.code}>
+                    {acc.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
 
         <div className="control-group">
           <label htmlFor="custom-account">Atau ketik kode akun</label>
@@ -150,24 +193,24 @@ function Dashboard() {
         </div>
 
         <div className="control-group">
-  <label htmlFor="coa-lama-filter">COA Lama</label>
-  <select
-    id="coa-lama-filter"
-    value={coaLamaFilter}
-    onChange={(e) => setCoaLamaFilter(e.target.value)}
-    style={{ minWidth: 220 }}
-  >
-    <option value="">Semua COA Lama</option>
-    {COA_LAMA_LIST.map((name) => (
-      <option key={name} value={name}>{name}</option>
-    ))}
-  </select>
-</div>
+          <label htmlFor="coa-lama-filter">COA Lama</label>
+          <select
+            id="coa-lama-filter"
+            value={coaLamaFilter}
+            onChange={(e) => setCoaLamaFilter(e.target.value)}
+            style={{ minWidth: 220 }}
+          >
+            <option value="">Semua COA Lama</option>
+            {COA_LAMA_LIST.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="control-group">
-          <label htmlFor="voucher-no">Filter No. Voucher</label>
+          <label htmlFor="voucher-filter">No. Voucher</label>
           <input
-            id="voucher-no"
+            id="voucher-filter"
             type="text"
             placeholder="misal MP-DN-2026..."
             value={voucherFilter}
@@ -209,28 +252,87 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-header">
-          <h2>Transaksi — {month}</h2>
-          <div style={{ textAlign: "right" }}>
-            <div className="row-count">
-              {loading ? "memuat..." : `menampilkan ${data.length} baris${effectiveAccount ? ` · filter akun: ${effectiveAccount}` : ""}`}
-            </div>
-            <div
-              className="row-count"
-              style={{
-                color: totalBalance >= 0 ? "#3ddc97" : "#e85d4d",
-                marginTop: 2,
-              }}
-            >
-              Total Balance: Rp {Math.round(totalBalance).toLocaleString("id-ID")}
+      {/* Tab switcher: Ledger vs P&L */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+        <button
+          onClick={() => setActiveTab("ledger")}
+          style={{
+            padding: "10px 18px",
+            background: activeTab === "ledger" ? "var(--surface)" : "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: "6px 6px 0 0",
+            color: activeTab === "ledger" ? "var(--text-primary)" : "var(--text-muted)",
+            fontFamily: "var(--font-display)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Transaksi
+        </button>
+        <button
+          onClick={() => setActiveTab("pnl")}
+          style={{
+            padding: "10px 18px",
+            background: activeTab === "pnl" ? "var(--surface)" : "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: "6px 6px 0 0",
+            color: activeTab === "pnl" ? "var(--text-primary)" : "var(--text-muted)",
+            fontFamily: "var(--font-display)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Laba Rugi (P&amp;L)
+        </button>
+      </div>
+
+      {activeTab === "ledger" && (
+        <div className="panel" style={{ borderTopLeftRadius: 0 }}>
+          <div className="panel-header">
+            <h2>Transaksi — {month}</h2>
+            <div style={{ textAlign: "right" }}>
+              <div className="row-count">
+                {loading ? "memuat..." : `menampilkan ${data.length} baris${effectiveAccount ? ` · filter akun: ${effectiveAccount}` : ""}`}
+              </div>
+              <div
+                className="row-count"
+                style={{
+                  color: totalBalance >= 0 ? "#3ddc97" : "#e85d4d",
+                  marginTop: 2,
+                }}
+              >
+                Total Balance: Rp {Math.round(totalBalance).toLocaleString("id-ID")}
+              </div>
             </div>
           </div>
+          <div className="panel-body" style={{ padding: 0 }}>
+            <LedgerTable data={data} loading={loading} />
+          </div>
         </div>
-        <div className="panel-body" style={{ padding: 0 }}>
-          <LedgerTable data={data} loading={loading} />
+      )}
+
+      {activeTab === "pnl" && (
+        <div className="panel" style={{ borderTopLeftRadius: 0 }}>
+          <div className="panel-header">
+            <h2>Laporan Laba Rugi</h2>
+            <div className="control-group" style={{ margin: 0 }}>
+              <select
+                value={costCenterFilter}
+                onChange={(e) => setCostCenterFilter(e.target.value)}
+                style={{ minWidth: 220 }}
+              >
+                <option value="">Semua Cost Center (Total)</option>
+                {costCenterList.map((cc) => (
+                  <option key={cc} value={cc}>{cc}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="panel-body">
+            <PnLStatement data={pnlData} loading={pnlLoading} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
