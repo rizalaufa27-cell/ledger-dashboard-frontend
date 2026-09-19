@@ -1,11 +1,9 @@
 import { useEffect, useState, lazy, Suspense } from "react";
-import { getLedger, getMonthlySummary, getPnl, getCostCenters } from "../services/api";
-import KPICard from "../components/KPICard";
+import { getLedger, getPnl, getCostCenters } from "../services/api";
 import LedgerTable from "../components/LedgerTable";
 import { ACCOUNT_GROUPS } from "../data/chartOfAccounts";
 import { COA_LAMA_LIST } from "../data/coaLamaList";
 
-const MonthlySummaryChart = lazy(() => import("../components/MonthlySummaryChart"));
 const PnLStatement = lazy(() => import("../components/PnLStatement"));
 
 const MONTHS = [
@@ -28,7 +26,8 @@ function parseNumber(value) {
 function Dashboard() {
   const [activePage, setActivePage] = useState("ledger"); // "ledger" | "pnl"
 
-  const [month, setMonth] = useState("Januari");
+  // --- State khusus tab Transaksi (independen, punya bulan sendiri) ---
+  const [ledgerMonth, setLedgerMonth] = useState("Januari");
   const [accountFilter, setAccountFilter] = useState("");
   const [customAccount, setCustomAccount] = useState("");
   const [coaLamaFilter, setCoaLamaFilter] = useState("");
@@ -39,27 +38,29 @@ function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [monthlySummary, setMonthlySummary] = useState([]);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryLoaded, setSummaryLoaded] = useState(false);
-
+  // --- State khusus tab Laba Rugi (independen, punya bulan sendiri) ---
+  const [pnlMonth, setPnlMonth] = useState("Januari");
   const [pnlData, setPnlData] = useState(null);
   const [pnlLoading, setPnlLoading] = useState(false);
   const [costCenterFilter, setCostCenterFilter] = useState("");
   const [costCenterList, setCostCenterList] = useState([]);
-  const [pnlEverOpened, setPnlEverOpened] = useState(false);
 
   const effectiveAccount = customAccount.trim() || accountFilter;
 
+  // Tab Transaksi: cuma jalan kalau tab ini aktif. Nggak lagi manggil
+  // /api/summary sama sekali -> jauh lebih ringan & cepat, karena summary
+  // narik data SEMUA bulan sekaligus (mahal), padahal di sini cuma butuh
+  // data 1 bulan yang lagi dipilih.
   useEffect(() => {
     if (activePage !== "ledger") return;
+
     async function loadData() {
       setLoading(true);
       setError("");
 
       try {
         const result = await getLedger(
-          month,
+          ledgerMonth,
           { account: effectiveAccount, coaLama: coaLamaFilter, voucherNo: voucherFilter },
           rowLimit
         );
@@ -74,39 +75,15 @@ function Dashboard() {
     }
 
     loadData();
-  }, [activePage, month, effectiveAccount, coaLamaFilter, voucherFilter, rowLimit]);
+  }, [activePage, ledgerMonth, effectiveAccount, coaLamaFilter, voucherFilter, rowLimit]);
 
+  // Tab Laba Rugi: cuma jalan kalau tab ini aktif, pakai bulan sendiri (pnlMonth).
   useEffect(() => {
-    if (activePage !== "ledger" || summaryLoaded) return;
-    async function loadSummary() {
-      setSummaryLoading(true);
-      try {
-        const result = await getMonthlySummary();
-        setMonthlySummary(result);
-        setSummaryLoaded(true);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setSummaryLoading(false);
-      }
-    }
-
-    loadSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage]);
-
-  useEffect(() => {
-    if (activePage === "pnl" && !pnlEverOpened) {
-      setPnlEverOpened(true);
-    }
-  }, [activePage, pnlEverOpened]);
-
-  useEffect(() => {
-    if (!pnlEverOpened) return;
+    if (activePage !== "pnl") return;
 
     async function loadCostCenters() {
       try {
-        const result = await getCostCenters(month);
+        const result = await getCostCenters(pnlMonth);
         setCostCenterList(result);
         if (costCenterFilter && !result.includes(costCenterFilter)) {
           setCostCenterFilter("");
@@ -119,15 +96,15 @@ function Dashboard() {
 
     loadCostCenters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, pnlEverOpened]);
+  }, [activePage, pnlMonth]);
 
   useEffect(() => {
-    if (!pnlEverOpened) return;
+    if (activePage !== "pnl") return;
 
     async function loadPnL() {
       setPnlLoading(true);
       try {
-        const result = await getPnl(month, costCenterFilter || undefined);
+        const result = await getPnl(pnlMonth, costCenterFilter || undefined);
         setPnlData(result);
       } catch (err) {
         console.error(err);
@@ -138,16 +115,9 @@ function Dashboard() {
     }
 
     loadPnL();
-  }, [month, costCenterFilter, pnlEverOpened]);
+  }, [activePage, pnlMonth, costCenterFilter]);
 
   const totalBalance = data.reduce((sum, row) => sum + parseNumber(row["balance (idr)"]), 0);
-  const totalVoucher = new Set(data.map((row) => row["voucher no"])).size;
-
-  const currentMonthSummary = monthlySummary.find((s) => s.month?.startsWith(month));
-  const revenue = currentMonthSummary?.revenue ?? 0;
-  const cogs = currentMonthSummary?.cogs ?? 0;
-  const grossProfit = revenue - cogs;
-  const grossMargin = revenue === 0 ? 0 : (grossProfit / revenue) * 100;
 
   return (
     <div className="app-with-sidebar">
@@ -165,21 +135,6 @@ function Dashboard() {
             <span>{item.label}</span>
           </button>
         ))}
-
-        <div style={{ marginTop: 24 }}>
-          <div className="sidebar-section-label">Bulan</div>
-          <div style={{ padding: "0 8px" }}>
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              style={{ width: "100%" }}
-            >
-              {MONTHS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-        </div>
       </aside>
 
       <main className="main-content">
@@ -196,7 +151,7 @@ function Dashboard() {
             <div className="header-meta">
               SUMBER: GOOGLE SHEETS
               <br />
-              BULAN AKTIF: {month.toUpperCase()}
+              BULAN AKTIF: {(activePage === "ledger" ? ledgerMonth : pnlMonth).toUpperCase()}
             </div>
           </header>
 
@@ -205,6 +160,19 @@ function Dashboard() {
           {activePage === "ledger" && (
             <>
               <div className="controls-row">
+                <div className="control-group">
+                  <label htmlFor="ledger-month-select">Bulan</label>
+                  <select
+                    id="ledger-month-select"
+                    value={ledgerMonth}
+                    onChange={(e) => setLedgerMonth(e.target.value)}
+                  >
+                    {MONTHS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="control-group">
                   <label htmlFor="account-select">Filter Akun</label>
                   <select
@@ -277,34 +245,9 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="kpi-grid">
-                <KPICard label="Revenue (bulan ini)" value={revenue} format="idr" tone="positive" />
-                <KPICard label="COGS (bulan ini)" value={cogs} format="idr" tone="negative" />
-                <KPICard label="Gross Profit" value={grossProfit} format="idr" tone={grossProfit >= 0 ? "positive" : "negative"} />
-                <KPICard label="Gross Margin" value={grossMargin} format="percent" />
-                <KPICard label="Voucher (hasil filter)" value={totalVoucher} format="number" />
-                <KPICard label="Transaksi (hasil filter)" value={data.length} format="number" />
-              </div>
-
               <div className="panel">
                 <div className="panel-header">
-                  <h2>Tren Bulanan</h2>
-                  <span className="panel-meta">Revenue vs COGS, semua bulan</span>
-                </div>
-                <div className="panel-body">
-                  {summaryLoading ? (
-                    <div className="empty-state">Memuat ringkasan...</div>
-                  ) : (
-                    <Suspense fallback={<div className="empty-state">Memuat chart...</div>}>
-                      <MonthlySummaryChart data={monthlySummary} />
-                    </Suspense>
-                  )}
-                </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-header">
-                  <h2>Transaksi — {month}</h2>
+                  <h2>Transaksi — {ledgerMonth}</h2>
                   <div style={{ textAlign: "right" }}>
                     <div className="row-count">
                       {loading ? "memuat..." : `menampilkan ${data.length} baris${effectiveAccount ? ` · filter akun: ${effectiveAccount}` : ""}`}
@@ -331,17 +274,30 @@ function Dashboard() {
             <div className="panel">
               <div className="panel-header">
                 <h2>Laporan Laba Rugi</h2>
-                <div className="control-group" style={{ margin: 0 }}>
-                  <select
-                    value={costCenterFilter}
-                    onChange={(e) => setCostCenterFilter(e.target.value)}
-                    style={{ minWidth: 220 }}
-                  >
-                    <option value="">Semua Cost Center (Total)</option>
-                    {costCenterList.map((cc) => (
-                      <option key={cc} value={cc}>{cc}</option>
-                    ))}
-                  </select>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div className="control-group" style={{ margin: 0 }}>
+                    <select
+                      value={pnlMonth}
+                      onChange={(e) => setPnlMonth(e.target.value)}
+                      style={{ minWidth: 140 }}
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control-group" style={{ margin: 0 }}>
+                    <select
+                      value={costCenterFilter}
+                      onChange={(e) => setCostCenterFilter(e.target.value)}
+                      style={{ minWidth: 220 }}
+                    >
+                      <option value="">Semua Cost Center (Total)</option>
+                      {costCenterList.map((cc) => (
+                        <option key={cc} value={cc}>{cc}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
               <div className="panel-body">
