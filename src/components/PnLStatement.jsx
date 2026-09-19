@@ -1,6 +1,7 @@
 // Baris-baris "besar" yang ditonjolkan (subtotal utama dalam alur P&L)
 const MAJOR_SUBTOTALS = new Set([
   "gross_sales",
+  "gross_sales_before_tax",
   "sales_discount",
   "net_sales",
   "total_cogs",
@@ -45,7 +46,11 @@ function PnLStatement({ data, loading }) {
       )}
 
       {data.rows.map((row) => {
-        const isSubtotal = row.type === "subtotal";
+        // displayAsDetail: true -> baris ini SECARA HITUNGAN subtotal (hasil
+        // formula, misal Penjualan x 1.11), tapi SECARA TAMPILAN dibikin
+        // kayak baris detail biasa (nggak bold/uppercase), karena dia
+        // rincian, bukan total akhir dari suatu section.
+        const isSubtotal = row.type === "subtotal" && !row.displayAsDetail;
         const isMajor = MAJOR_SUBTOTALS.has(row.id);
 
         return (
