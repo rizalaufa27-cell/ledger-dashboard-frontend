@@ -47,9 +47,9 @@ function LineDetailTable({ rows }) {
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-              <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>{row["tanggal"] || "-"}</td>
+              <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>{row["posting date"] || "-"}</td>
               <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>{row["voucher no"] || "-"}</td>
-              <td style={{ padding: "4px 8px" }}>{row["keterangan"] || "-"}</td>
+              <td style={{ padding: "4px 8px" }}>{row["remarks"] || "-"}</td>
               <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
                 {row["debit (idr)"] ? formatIDR(Number(row["debit (idr)"])) : "-"}
               </td>
