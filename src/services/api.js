@@ -72,3 +72,24 @@ export async function getCostCenters(month) {
 
   return res.json();
 }
+
+/**
+ * Ambil rincian transaksi ledger buat SATU baris PNL tertentu (drill-down).
+ * Cuma jalan buat baris "detail" (yang punya kode akun langsung), bukan subtotal.
+ * @param {string} month
+ * @param {string} lineId - id baris PNL, misal "health_askes"
+ * @param {string} [costCenter]
+ */
+export async function getPnlLineDetail(month, lineId, costCenter) {
+  const params = new URLSearchParams({ month, lineId });
+  if (costCenter && costCenter !== "all") params.set("costCenter", costCenter);
+
+  const res = await fetch(`${API_BASE_URL}/api/pnl/line-detail?${params.toString()}`);
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Gagal mengambil rincian transaksi.");
+  }
+
+  return res.json();
+}

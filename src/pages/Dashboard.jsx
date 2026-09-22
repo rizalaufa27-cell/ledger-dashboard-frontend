@@ -302,7 +302,7 @@ function Dashboard() {
               </div>
               <div className="panel-body">
                 <Suspense fallback={<div className="empty-state">Memuat modul P&L...</div>}>
-                  <PnLStatement data={pnlData} loading={pnlLoading} />
+                  <PnLStatement data={pnlData} loading={pnlLoading} month={pnlMonth} costCenter={costCenterFilter} />
                 </Suspense>
               </div>
             </div>
